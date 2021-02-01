@@ -44,8 +44,6 @@ class MoneyAgent(Agent):
                 #print(self.m, other.m, self.m + other.m)
                 #print(xi_new, xj_new, xi_new+xj_new)
                 #print("break")
-                if(self.model.count%50==0):
-                    self.P= (1/self.model.T)*np.exp(-self.m/self.model.T)
 
     def step(self):
         if self.m > 0:
