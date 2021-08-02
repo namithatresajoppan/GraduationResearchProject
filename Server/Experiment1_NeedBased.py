@@ -361,14 +361,14 @@ class BoltzmannWealthModelNetwork(Model):
         self.datacollector.collect(self)
 
     def run_model(self, n):
-        for i in tqdm(range(n)):
+        for i in (range(n)):
             self.time = i+1
             self.step()
             self.count_L = 0
             self.count_H = 0
             self.Global_Attachment()
             self.gini = self.compute_gini()
-            #print("Step: ",self.time)
+            print("Step: ",self.time)
             data = self.datacollector.get_agent_vars_dataframe()
             data = data.reset_index()
             data = data.loc[data.Step == i]
