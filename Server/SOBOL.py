@@ -26,7 +26,6 @@ from mesa.batchrunner import FixedBatchRunner
 from IPython.display import clear_output
 from itertools import combinations
 import statistics
-import csv
 #plt.style.use('seaborn-pastel')
 #from tqdm.autonotebook import tqdm
 
@@ -43,6 +42,7 @@ g = 1
 N = 100
 alpha = np.random.normal(loc = 1.08, scale = 0.074, size = N) 
 capital = np.random.uniform(low = 0.1, high = 10, size = N)
+
 
 #global function that calculates the weight of the edge, args: the 2 nodes (agent class objects)
 def Edge_Weight(node1,node2, b, a):
@@ -376,13 +376,13 @@ class BoltzmannWealthModelNetwork(Model):
            
 
 
-# In[7]:
+# In[6]:
 
 
 problem = {
     'num_vars': 5,
     'names': ['b', 'a', 'beta', 'delta','theta'],
-    'bounds': [[1, 10], [1, 10], [0.01, 0.99],[0.01, 0.99],[0.01, 0.99]]
+    'bounds': [[1, 10], [1, 10], [0.001, 0.99],[0.001, 0.99],[0.001, 0.99]]
 }
 #shape parameter is alpha, rate parameter is beta
 fixed_parameters = {'N' : 100}
@@ -392,34 +392,40 @@ model_reporters = {'fit_alpha': lambda m:m.fit_alpha,'fit_beta':lambda m:m.fit_b
 # Set the repetitions, the amount of steps, and the amount of distinct values per variable
 replicates = 10
 max_steps = 100#
-distinct_samples = 500
+distinct_samples = 512
 
 # generating samples
 param_values = saltelli.sample(problem, distinct_samples)
 variable_parameters={name:[] for name in problem['names']}
-#print(param_values)
+#print(variable_parameters)
+#print(len(param_values))
+#print(param_values[450])
 
 
-# In[16]:
+# In[35]:
 
 
-data = {}
+batch = BatchRunner(BoltzmannWealthModelNetwork,variable_parameters = variable_parameters,
+                    fixed_parameters = fixed_parameters,max_steps=max_steps,iterations=2,model_reporters = model_reporters,
+                    display_progress = True)
+count = 0
+for i in range(replicates):
+    for vals in param_values: 
+        vals = list(vals)
+        #print(vals)
 
-for i, var in enumerate(problem['names']):
-    # Get the bounds for this variable and get <distinct_samples> samples within this space (uniform)
-    samples = np.linspace(*problem['bounds'][i], num=distinct_samples)
-    batch = BatchRunner(BoltzmannWealthModelNetwork, 
-                        max_steps=max_steps,
-                        iterations=replicates,
-                        variable_parameters={var: samples},
-                        model_reporters=model_reporters,
-                        display_progress=True)
-    
-    batch.run_all()
-    
-    data[var] = batch.get_model_vars_dataframe()
+        # Transform to dict with parameter names and their values
+        variable_parameters = {}
+        for name, val in zip(problem['names'], vals):
+            variable_parameters[name] = val
+        #print(variable_parameters)
+        batch.run_iteration(variable_parameters, tuple(vals), count)
+        count += 1
 
-header = data.keys()
-for head in header:
-    data[head].to_csv("OFAT_{}.csv".format(head))
+        clear_output(wait=True)
+        print(f'{count / (len(param_values) * (replicates)) * 100:.2f}% done')
+data = batch.get_model_vars_dataframe()
+data = data.drop(columns = 'Run').reset_index(drop = True)
+data = data.sort_index(axis = 0)
+data.to_csv("SOBOL.csv")
 
