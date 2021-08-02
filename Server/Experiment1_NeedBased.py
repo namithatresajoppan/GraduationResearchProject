@@ -361,7 +361,7 @@ class BoltzmannWealthModelNetwork(Model):
         self.datacollector.collect(self)
 
     def run_model(self, n):
-        for i in (range(n)):
+        for i in tqdm(range(n)):
             self.time = i+1
             self.step()
             self.count_L = 0
