@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[ ]:
+
+
 from mesa import Agent, Model
 from mesa.time import RandomActivation
 from mesa.datacollection import DataCollector
@@ -5,6 +11,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from tqdm import tqdm_notebook as tqdm
 import seaborn as sns
 import networkx as nx
 import os, sys
@@ -14,7 +21,7 @@ import statistics
 import cmath
 
 
-# In[2]:
+# In[ ]:
 
 
 #0<gamma_L<gamma_H<1
@@ -28,7 +35,7 @@ theta = 0.8
 g = 1
 
 
-# In[3]:
+# In[ ]:
 
 
 #global function that calculates the weight of the edge, args: the 2 nodes (agent class objects)
@@ -44,7 +51,6 @@ def calculating_k_c(agent, gamma, E_t, time):
        
         #k_t+1 = theta*(alpha*k_t^gamma - C_t + (1-delta)*k_t)
         k_new = theta*(agent.alpha*a1-agent.consum + (1-delta)*agent.k)
-       
         #print("New k = ", k_new)
 
         slope = gamma*agent.alpha*pow(agent.k, gamma -1) + 1 - delta - 1/theta
@@ -74,7 +80,7 @@ def isocline(agent):
         return con_cond   
 
 
-# In[4]:
+# In[ ]:
 
 
 class MoneyAgent(Agent):
@@ -119,6 +125,7 @@ class MoneyAgent(Agent):
                 while(con>self.k or con<0):
                     con = con_cond + random.random()
                 self.consum = con
+    
         self.model.agents.append(self)
         
         
@@ -142,7 +149,17 @@ class MoneyAgent(Agent):
     # 
     #function that updates the capital and consumption for the next time step    
     def income_updation(self):
-        
+        #finding the initial gini coefficient and total number of poor at time step 1
+        if(self.model.time == 1):
+            count = 0
+            for agent in self.model.agents:
+                if(agent.income<yp):
+                    count+=1
+            self.model.poor_no = count
+            agent_wealths = [agent.k for agent in self.model.agents]
+            x = sorted(agent_wealths)
+            B = sum(xi * (self.model.N - i) for i, xi in enumerate(x)) / (self.model.N * sum(x))
+            self.model.gini =  1 + (1 / self.model.N) - 2 * B
         #finding expected value of income at each time step
         e_t = [a.income for a in self.model.agents] #is this k or f(alpha,k)?
         E_t = statistics.mean(e_t)
@@ -287,7 +304,7 @@ class MoneyAgent(Agent):
         self.income_generation() 
 
 
-# In[9]:
+# In[ ]:
 
 
 class BoltzmannWealthModelNetwork(Model):
@@ -307,7 +324,7 @@ class BoltzmannWealthModelNetwork(Model):
         self.nodes = np.linspace(0,N-1,N, dtype = 'int') #to keep track of the N nodes   
         
         self.schedule = RandomActivation(self)
-        self.datacollector = DataCollector(model_reporters = {"Gini": 'gini'},
+        self.datacollector = DataCollector(model_reporters = {"Gini": 'gini', 'Agents below yp':'poor_no'},
         agent_reporters={"slope": "slope","k_t":'k','income':'income','consumption':'consum','lamda':'lamda',
                          'alpha':'alpha','technology':'tec' })       
         for i, node in enumerate(self.G.nodes()):
@@ -346,7 +363,6 @@ class BoltzmannWealthModelNetwork(Model):
     def run_model(self, n):
         for i in tqdm(range(n)):
             self.time = i+1
-            #print(self.time)
             self.step()
             self.count_L = 0
             self.count_H = 0
@@ -356,8 +372,8 @@ class BoltzmannWealthModelNetwork(Model):
             data = self.datacollector.get_agent_vars_dataframe()
             data = data.reset_index()
             data = data.loc[data.Step == i]
-            #if(self.time == 1):
-            self.Budget = 0.07*sum(data.income)#0.025*sum(data.income) #isn't this the budget? (at time step=1)
+            if(self.time == 1):
+                self.Budget = 0.09*sum(data.income)#0.025*sum(data.income) #isn't this the budget? (at time step=1)
         
             #calculating the total poverty shortfall
             yi_data = data.loc[data.income<yp]
@@ -366,6 +382,7 @@ class BoltzmannWealthModelNetwork(Model):
             S = sum(yp - (yi_data.income.reset_index(drop=True).to_numpy()))
             #print(S)
             poor_agents = yi_data.AgentID.reset_index(drop = True).to_numpy()
+            self.poor_no = len(poor_agents)
             #print("Total Poor: ", len(poor_agents))
             self.count_L = 0
             self.count_H = 0
@@ -383,20 +400,21 @@ class BoltzmannWealthModelNetwork(Model):
                 for poor in poor_agents: #accessing the poor node
                     for agent in self.agents: #accessing the class object
                         if(poor == agent.unique_id):
-                            agent.income = yp
+                            additional = yp - agent.income
+                            agent.income += additional
             else:
                 #print("in")
                 for poor in poor_agents: #accessing the poor node
                     for agent in self.agents: #accessing the class object
                         if(poor == agent.unique_id):
                             additional = yp*(self.Budget/S)
-                            agent.income = additional
+                            agent.income += additional
                 
                 
            
 
 
-# In[10]:
+# In[ ]:
 
 
 N = 100
@@ -406,18 +424,14 @@ a = 0.69
 alpha = np.random.normal(loc = 1.08, scale = 0.074, size = N) 
 capital = np.random.uniform(low = 0.1, high = 10, size = N)
 yp = 1.62
-
-
-# In[ ]:
-
-
 model = BoltzmannWealthModelNetwork(b, a,N)
 model.run_model(steps)
 model_df = model.datacollector.get_model_vars_dataframe()
 agent_df = model.datacollector.get_agent_vars_dataframe()
 agent_df.reset_index(level=1, inplace = True)
+agent_df = agent_df.reset_index()
 agent_df.to_csv("Experiment1_Agent.csv")
-model_df.to_csv("Experiment1_Model.csv")
+model_df.loc[1:].to_csv("Experiment1_Model.csv")
 
 
 # In[ ]:
